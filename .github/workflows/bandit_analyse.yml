@@ -36,5 +36,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rapport-bandit
-          path: rapport_bandit.txt
-          path: rapport_bandit.html
+          path: | 
+            rapport_bandit.txt
+            rapport_bandit.html
