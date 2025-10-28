@@ -5,36 +5,41 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:  # Permet aussi de lancer manuellement l’analyse
 
 jobs:
   nikto-scan:
     runs-on: ubuntu-latest
+
     steps:
-      - name: 🔹 Vérification du code
-        uses: actions/checkout@v3
+      - name: 🔹 Vérification du dépôt
+        uses: actions/checkout@v4
 
       - name: 🔹 Installation de Python et dépendances
         run: |
           python3 -m venv venv
           source venv/bin/activate
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: 🔹 Lancement du serveur Flask
         run: |
-          nohup python3 app.py &
-          sleep 10  # Attend que le serveur démarre
+          nohup python3 app.py > server.log 2>&1 &
+          sleep 10  # Attendre que le serveur démarre
 
       - name: 🔹 Installation de Nikto
         run: |
-          sudo apt update
+          sudo apt update -y
           sudo apt install -y nikto
 
-      - name: 🔹 Analyse de l’application avec Nikto
+      - name: 🔹 Exécution de l’analyse Nikto
         run: |
-          nikto -h http://127.0.0.1:5000 -output nikto_report.txt
+          nikto -h http://127.0.0.1:5000 -o nikto_report.html -Format html
+          nikto -h http://127.0.0.1:5000 -o nikto_report.txt -Format txt
 
-      - name: 📦 Sauvegarde du rapport
-        uses: actions/upload-artifact@v3
+      - name: 📦 Sauvegarde des rapports Nikto
+        uses: actions/upload-artifact@v4
         with:
           name: rapport-nikto
-          path: nikto_report.txt
+          path: |
+            nikto_report.html
+            nikto_report.txt
