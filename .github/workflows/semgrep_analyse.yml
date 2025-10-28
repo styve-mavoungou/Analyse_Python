@@ -5,12 +5,12 @@ on:
     branches:
       - main
     paths:
-      - '**/*.py'         
+      - '**/*.py'
       - '.github/workflows/semgrep_analyse.yml'
   pull_request:
     branches:
       - main
-  workflow_dispatch:       
+  workflow_dispatch:
 
 jobs:
   semgrep_scan:
@@ -33,10 +33,14 @@ jobs:
 
       - name: Exécution de l’analyse Semgrep
         run: |
-          semgrep --config=auto . || true
+          # Génération du rapport JSON principal
           semgrep --config=auto --error --json > rapport_semgrep.json || true
-          semgrep --config=auto --error --html > rapport_semgrep.html || true
-          semgrep --config=auto --error --txt > rapport_semgrep.txt || true
+
+          # Génération du rapport texte (résumé)
+          semgrep --config=auto --error --text > rapport_semgrep.txt || true
+
+          # Génération du rapport HTML depuis le JSON
+          semgrep --config=auto --error --json | semgrep report --json-input --html --output rapport_semgrep.html || true
 
       - name: Sauvegarde des rapports Semgrep
         uses: actions/upload-artifact@v4
