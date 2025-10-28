@@ -1,21 +1,22 @@
-name: Analyse de sécurité Nikto
+name: Analyse automatique Nikto
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" ]        
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch:
+             
 
 jobs:
-  nikto-scan:
+  nikto_scan:
     runs-on: ubuntu-latest
+    name: Exécution automatique de Nikto
 
     steps:
       - name: 🔹 Vérification du dépôt
         uses: actions/checkout@v4
 
-      - name: 🔹 Installation de Python et dépendances
+      - name: 🔹 Installation des dépendances Python
         run: |
           sudo apt update -y
           sudo apt install -y python3-venv python3-pip
@@ -26,26 +27,25 @@ jobs:
       - name: 🔹 Lancement du serveur Flask
         run: |
           nohup python3 app.py > server.log 2>&1 &
-          echo "Attente du démarrage de l’application..."
+          echo "⏳ Attente du démarrage de l'application Flask..."
           sleep 20
-          curl -I http://127.0.0.1:5000 || (echo "⚠️ Le serveur Flask ne répond pas !" && cat server.log && exit 1)
+          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur Flask ne répond pas" && cat server.log && exit 1)
 
       - name: 🔹 Installation de Nikto
         run: |
-          sudo apt update -y
           sudo apt install -y nikto
 
-      - name: 🔹 Exécution de l’analyse Nikto
+      - name: 🔹 Analyse automatique avec Nikto
         run: |
-          echo "Démarrage de l'analyse Nikto..."
-          nikto -h http://127.0.0.1:5000 -o nikto_report.html -Format html || true
-          nikto -h http://127.0.0.1:5000 -o nikto_report.txt -Format txt || true
+          echo "🚀 Démarrage de l'analyse de sécurité avec Nikto..."
+          nikto -h http://127.0.0.1:5000 -o rapport_nikto.html -Format html || true
+          nikto -h http://127.0.0.1:5000 -o rapport_nikto.txt -Format txt || true
 
       - name: 📦 Sauvegarde des rapports Nikto
         uses: actions/upload-artifact@v4
         with:
           name: rapport-nikto
           path: |
-            nikto_report.html
-            nikto_report.txt
+            rapport_nikto.html
+            rapport_nikto.txt
             server.log
