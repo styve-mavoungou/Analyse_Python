@@ -1,0 +1,48 @@
+name: Analyse dynamique automatique OWASP ZAP
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  zap_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔹 Vérification du dépôt
+        uses: actions/checkout@v4
+
+      - name: 🔹 Installation Python et dépendances
+        run: |
+          sudo apt update -y
+          sudo apt install -y python3-venv python3-pip
+          python3 -m venv venv
+          source venv/bin/activate
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: 🔹 Lancement du serveur Flask
+        run: |
+          nohup python3 app.py > server.log 2>&1 &
+          echo "⏳ Démarrage du serveur Flask..."
+          sleep 20
+          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur ne répond pas !" && cat server.log && exit 1)
+
+      - name: 🔹 Installation d’OWASP ZAP
+        run: |
+          sudo apt install -y snap
+          sudo snap install zaproxy --classic
+
+      - name: 🔹 Analyse automatique avec OWASP ZAP
+        run: |
+          echo "🚀 Lancement du scan ZAP..."
+          zaproxy -cmd -quickurl http://127.0.0.1:5000 -quickout rapport_zap.html -quickprogress || true
+          zaproxy -cmd -quickurl http://127.0.0.1:5000 -quickout rapport_zap.json -quickprogress || true
+
+      - name: 📦 Sauvegarde des rapports
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-zap
+          path: |
+            rapport_zap.html
+            rapport_zap.json
+            server.log
