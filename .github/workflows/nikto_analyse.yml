@@ -1,51 +1,42 @@
-name: Analyse automatique Nikto
+name: Analyse de sécurité Nikto
 
 on:
   push:
-    branches: [ "main" ]        
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-             
+  workflow_dispatch:   # permet de déclencher manuellement si besoin
 
 jobs:
   nikto_scan:
     runs-on: ubuntu-latest
-    name: Exécution automatique de Nikto
 
     steps:
-      - name: 🔹 Vérification du dépôt
+      - name: 🧩 Récupération du code source
         uses: actions/checkout@v4
 
-      - name: 🔹 Installation des dépendances Python
+      - name: 🐍 Installation de Python et des dépendances
         run: |
-          sudo apt update -y
-          sudo apt install -y python3-venv python3-pip
-          python3 -m venv venv
-          source venv/bin/activate
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          sudo apt-get update -y
+          sudo apt-get install -y python3 python3-pip
+          pip install -r requirements.txt || true
 
-      - name: 🔹 Lancement du serveur Flask
+      - name: 🚀 Lancer le serveur Flask en arrière-plan
         run: |
-          nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Attente du démarrage de l'application Flask..."
-          sleep 20
-          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur Flask ne répond pas" && cat server.log && exit 1)
+          nohup python3 app.py &
+          sleep 10   # Attendre que le serveur démarre
 
-      - name: 🔹 Installation de Nikto
+      - name: 🧰 Installer Nikto
         run: |
-          sudo apt install -y nikto
+          sudo apt-get install -y nikto
 
-      - name: 🔹 Analyse automatique avec Nikto
+      - name: 🧪 Exécuter l’analyse Nikto
         run: |
-          echo "🚀 Démarrage de l'analyse de sécurité avec Nikto..."
-          nikto -h http://127.0.0.1:5000 -o rapport_nikto.html -Format html || true
-          nikto -h http://127.0.0.1:5000 -o rapport_nikto.txt -Format txt || true
+          nikto -h http://127.0.0.1:5000 -o rapport_nikto.txt -Format txt
+          cat rapport_nikto.txt
 
-      - name: 📦 Sauvegarde des rapports Nikto
+      - name: 💾 Sauvegarder le rapport comme artefact
         uses: actions/upload-artifact@v4
         with:
-          name: rapport-nikto
-          path: |
-            rapport_nikto.html
-            rapport_nikto.txt
-            server.log
+          name: rapport_nikto
+          path: rapport_nikto.txt
