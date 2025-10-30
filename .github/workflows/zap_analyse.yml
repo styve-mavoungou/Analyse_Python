@@ -3,42 +3,186 @@ name: Analyse automatique OWASP ZAP
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-
+    name: Scan de sécurité avec OWASP ZAP
+    
     steps:
-      - name: 🧩 Vérification du dépôt
+      # Étape 1 : Récupération du code
+      - name: 🧩 Checkout du dépôt
         uses: actions/checkout@v4
 
-      - name: ⚙️ Installation Python et dépendances
-        run: |
-          sudo apt update -y
-          sudo apt install -y python3 python3-pip
-          pip install -r requirements.txt || true
+      # Étape 2 : Configuration de Python
+      - name: 🐍 Configuration de Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: 🚀 Lancement du serveur Flask
+      # Étape 3 : Installation des dépendances
+      - name: 📦 Installation des dépendances
         run: |
-          nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Démarrage du serveur Flask..."
-          sleep 20
-          curl -I http://127.0.0.1:5000 || (echo "❌ Le serveur Flask ne répond pas" && cat server.log && exit 1)
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "⚠️ Aucun fichier requirements.txt trouvé"
+          fi
 
-      - name: 🕷️ Lancement du scan OWASP ZAP
+      # Étape 4 : Démarrage de l'application Flask
+      - name: 🚀 Démarrage du serveur Flask
         run: |
-          echo "🚀 Exécution de l’analyse OWASP ZAP..."
-          docker run -t --network host owasp/zap2docker-stable zap-baseline.py \
+          echo "🔧 Démarrage de l'application Flask..."
+          nohup python3 app.py > flask_server.log 2>&1 &
+          SERVER_PID=$!
+          echo "📝 PID du serveur: $SERVER_PID"
+          echo $SERVER_PID > server.pid
+          
+          # Attendre que le serveur démarre (max 30 secondes)
+          echo "⏳ Attente du démarrage du serveur..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:5000 > /dev/null 2>&1; then
+              echo "✅ Serveur Flask opérationnel après $i secondes"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Le serveur Flask n'a pas démarré dans les temps"
+              echo "📋 Logs du serveur:"
+              cat flask_server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Vérification finale
+          echo "🔍 Test de connectivité:"
+          curl -I http://127.0.0.1:5000
+
+      # Étape 5 : Création du dossier pour les rapports
+      - name: 📁 Création du dossier de rapports
+        run: |
+          mkdir -p ${{ github.workspace }}/zap-reports
+          chmod 777 ${{ github.workspace }}/zap-reports
+
+      # Étape 6 : Exécution du scan OWASP ZAP
+      - name: 🕷️ Scan OWASP ZAP Baseline
+        run: |
+          echo "🚀 Lancement de l'analyse OWASP ZAP..."
+          docker run --rm \
+            --network host \
+            -v ${{ github.workspace }}/zap-reports:/zap/wrk:rw \
+            -u root \
+            owasp/zap2docker-stable \
+            zap-baseline.py \
             -t http://127.0.0.1:5000 \
-            -r rapport_zap.html || echo "⚠️ ZAP a retourné un code d’erreur mais le pipeline continue."
+            -r rapport_zap.html \
+            -w rapport_zap.md \
+            -J rapport_zap.json \
+            -a \
+            -d \
+            -I \
+            || true
+          
+          echo "✅ Scan ZAP terminé"
         continue-on-error: true
 
-      - name: 📦 Sauvegarde du rapport
+      # Étape 7 : Vérification de la génération des rapports
+      - name: 🔍 Vérification des rapports générés
+        if: always()
+        run: |
+          echo "📋 Contenu du dossier zap-reports:"
+          ls -lah ${{ github.workspace }}/zap-reports/
+          
+          if [ -f "${{ github.workspace }}/zap-reports/rapport_zap.html" ]; then
+            echo "✅ Rapport HTML généré avec succès"
+            SIZE=$(stat -f%z "${{ github.workspace }}/zap-reports/rapport_zap.html" 2>/dev/null || stat -c%s "${{ github.workspace }}/zap-reports/rapport_zap.html")
+            echo "📏 Taille du rapport: $SIZE octets"
+          else
+            echo "⚠️ Rapport HTML non trouvé"
+          fi
+
+      # Étape 8 : Affichage d'un résumé du scan
+      - name: 📊 Résumé du scan
+        if: always()
+        run: |
+          if [ -f "${{ github.workspace }}/zap-reports/rapport_zap.md" ]; then
+            echo "📄 Résumé du rapport ZAP:"
+            cat ${{ github.workspace }}/zap-reports/rapport_zap.md
+          else
+            echo "⚠️ Rapport Markdown non disponible"
+          fi
+
+      # Étape 9 : Analyse JSON pour compter les vulnérabilités
+      - name: 🔢 Analyse des vulnérabilités détectées
+        if: always()
+        run: |
+          if [ -f "${{ github.workspace }}/zap-reports/rapport_zap.json" ]; then
+            echo "🔍 Analyse du rapport JSON..."
+            
+            # Installation de jq si nécessaire
+            sudo apt-get install -y jq
+            
+            # Comptage des alertes
+            HIGH=$(jq '[.site[].alerts[]? | select(.riskcode=="3")] | length' ${{ github.workspace }}/zap-reports/rapport_zap.json || echo "0")
+            MEDIUM=$(jq '[.site[].alerts[]? | select(.riskcode=="2")] | length' ${{ github.workspace }}/zap-reports/rapport_zap.json || echo "0")
+            LOW=$(jq '[.site[].alerts[]? | select(.riskcode=="1")] | length' ${{ github.workspace }}/zap-reports/rapport_zap.json || echo "0")
+            INFO=$(jq '[.site[].alerts[]? | select(.riskcode=="0")] | length' ${{ github.workspace }}/zap-reports/rapport_zap.json || echo "0")
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📊 RÉSULTATS DU SCAN OWASP ZAP"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔴 Vulnérabilités HIGH   : $HIGH"
+            echo "🟠 Vulnérabilités MEDIUM : $MEDIUM"
+            echo "🟡 Vulnérabilités LOW    : $LOW"
+            echo "🔵 Informations          : $INFO"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Optionnel : Faire échouer si des vulnérabilités critiques sont trouvées
+            # Décommentez les lignes suivantes si vous voulez bloquer le pipeline
+            # if [ "$HIGH" -gt "0" ]; then
+            #   echo "❌ ÉCHEC: $HIGH vulnérabilités HIGH détectées!"
+            #   exit 1
+            # fi
+          else
+            echo "⚠️ Rapport JSON non disponible pour l'analyse"
+          fi
+
+      # Étape 10 : Upload des rapports en tant qu'artifacts
+      - name: 📤 Upload des rapports ZAP
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rapport-zap
+          name: rapport-zap-${{ github.run_number }}
           path: |
-            rapport_zap.html
-            server.log
+            ${{ github.workspace }}/zap-reports/
+            flask_server.log
+          retention-days: 30
+
+      # Étape 11 : Affichage des logs du serveur Flask
+      - name: 📋 Logs du serveur Flask
+        if: always()
+        run: |
+          echo "📋 Logs du serveur Flask:"
+          if [ -f flask_server.log ]; then
+            cat flask_server.log
+          else
+            echo "⚠️ Fichier de logs non trouvé"
+          fi
+
+      # Étape 12 : Nettoyage - Arrêt du serveur Flask
+      - name: 🧹 Arrêt du serveur Flask
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            PID=$(cat server.pid)
+            echo "🛑 Arrêt du serveur Flask (PID: $PID)..."
+            kill $PID 2>/dev/null || echo "⚠️ Processus déjà arrêté"
+          fi
+          # Nettoyage de tous les processus Python restants
+          pkill -f "python3 app.py" || true
+          echo "✅ Nettoyage terminé"
