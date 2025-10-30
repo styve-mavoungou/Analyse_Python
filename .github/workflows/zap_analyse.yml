@@ -1,53 +1,39 @@
-name: Analyse automatique OWASP ZAP
+name: OWASP ZAP Auto Scan
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-    name: Exécution automatique d’OWASP ZAP
 
     steps:
-      - name: 🔹 Récupération du code source
+      - name: 🧩 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔹 Installation de Python et dépendances
+      - name: ⚙️ Set up Python
         run: |
           sudo apt update -y
           sudo apt install -y python3 python3-pip
           pip install -r requirements.txt || true
 
-      - name: 🔹 Lancement du serveur Flask
+      - name: 🚀 Start Flask app in background
         run: |
           nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Attente du démarrage du serveur Flask..."
-          sleep 25
-          echo "✅ Vérification du serveur Flask..."
-          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur Flask ne répond pas !" && cat server.log && exit 1)
+          echo "⏳ Waiting for Flask to start..."
+          sleep 20
+          curl -I http://127.0.0.1:5000 || (echo "❌ Flask did not start!" && cat server.log && exit 1)
 
-      - name: 🔹 Installation d’OWASP ZAP
+      - name: 🕷️ Run OWASP ZAP scan
         run: |
-          sudo apt install -y snap
-          sudo snap install zaproxy --classic
+          docker run -t --network host owasp/zap2docker-stable zap-baseline.py \
+            -t http://127.0.0.1:5000 \
+            -r zap_report.html || true
 
-      - name: ⚡ Exécution de l’analyse OWASP ZAP
-        run: |
-          echo "🚀 Lancement du scan de sécurité OWASP ZAP..."
-          zaproxy -cmd -quickurl http://127.0.0.1:5000 \
-            -quickout rapport_zap.html -quickprogress || echo "⚠️ ZAP terminé avec avertissements."
-          zaproxy -cmd -quickurl http://127.0.0.1:5000 \
-            -quickout rapport_zap.json -quickprogress || echo "⚠️ ZAP JSON terminé avec avertissements."
-
-      - name: 📦 Sauvegarde des rapports comme artefacts
+      - name: 📦 Upload ZAP report
         uses: actions/upload-artifact@v4
         with:
-          name: rapport-zap
-          path: |
-            rapport_zap.html
-            rapport_zap.json
-            server.log
+          name: zap-report
+          path: zap_report.html
