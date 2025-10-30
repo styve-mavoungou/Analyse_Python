@@ -5,8 +5,8 @@ push:
 branches: [ "main" ]
 workflow_dispatch:
 
-jobs: zap_scan: runs-on: ubuntu-latest
-
+jobs: zap_scan: 
+runs-on: ubuntu-latest
 env:
   # L'URL cible de l'application Flask, accessible localement sur le runner
   TARGET_URL: http://127.0.0.1:5000
