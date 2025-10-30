@@ -9,33 +9,31 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
-    services:
-      web:
-        image: python:3.10
-        ports:
-          - 5000:5000
-        options: >-
-          --health-cmd="curl --fail http://localhost:5000 || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        volumes:
-          - .:/app
-        env:
-          FLASK_APP: app.py
-        command: >
-          bash -c "pip install -r /app/requirements.txt &&
-                   python3 /app/app.py"
-
     steps:
       - name: 🧩 Vérification du dépôt
         uses: actions/checkout@v4
+
+      - name: ⚙️ Installation Python et dépendances
+        run: |
+          sudo apt update -y
+          sudo apt install -y python3 python3-pip
+          pip install -r requirements.txt
+
+      - name: 🚀 Lancement du serveur Flask
+        run: |
+          nohup python3 app.py > server.log 2>&1 &
+          echo "⏳ Démarrage du serveur Flask..."
+          for i in {1..10}; do
+            curl -s http://127.0.0.1:5000 && break
+            echo "🔄 Attente du serveur Flask..."
+            sleep 5
+          done
 
       - name: 🕷️ Lancement du scan OWASP ZAP
         run: |
           echo "🚀 Exécution de l’analyse OWASP ZAP..."
           docker run -v ${{ github.workspace }}:/zap/wrk owasp/zap2docker-stable zap-baseline.py \
-            -t http://localhost:5000 \
+            -t http://127.0.0.1:5000 \
             -r rapport_zap.html || echo "⚠️ ZAP a retourné un code d’erreur mais le pipeline continue."
         continue-on-error: true
 
@@ -46,3 +44,4 @@ jobs:
           name: rapport-zap
           path: |
             rapport_zap.html
+            server.log
