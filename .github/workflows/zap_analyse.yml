@@ -1,44 +1,49 @@
-name: Analyse dynamique automatique OWASP ZAP
+name: Analyse automatique OWASP ZAP
 
 on:
   push:
+    branches: [ "main" ]
+  pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
+    name: Exécution automatique d’OWASP ZAP
+
     steps:
-      - name: 🔹 Vérification du dépôt
+      - name: 🔹 Récupération du code source
         uses: actions/checkout@v4
 
-      - name: 🔹 Installation Python et dépendances
+      - name: 🔹 Installation de Python et dépendances
         run: |
           sudo apt update -y
-          sudo apt install -y python3-venv python3-pip
-          python3 -m venv venv
-          source venv/bin/activate
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          sudo apt install -y python3 python3-pip
+          pip install -r requirements.txt || true
 
       - name: 🔹 Lancement du serveur Flask
         run: |
           nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Démarrage du serveur Flask..."
-          sleep 20
-          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur ne répond pas !" && cat server.log && exit 1)
+          echo "⏳ Attente du démarrage du serveur Flask..."
+          sleep 25
+          echo "✅ Vérification du serveur Flask..."
+          curl -I http://127.0.0.1:5000 || (echo "❌ Erreur : le serveur Flask ne répond pas !" && cat server.log && exit 1)
 
       - name: 🔹 Installation d’OWASP ZAP
         run: |
           sudo apt install -y snap
           sudo snap install zaproxy --classic
 
-      - name: 🔹 Analyse automatique avec OWASP ZAP
+      - name: ⚡ Exécution de l’analyse OWASP ZAP
         run: |
-          echo "🚀 Lancement du scan ZAP..."
-          zaproxy -cmd -quickurl http://127.0.0.1:5000 -quickout rapport_zap.html -quickprogress || true
-          zaproxy -cmd -quickurl http://127.0.0.1:5000 -quickout rapport_zap.json -quickprogress || true
+          echo "🚀 Lancement du scan de sécurité OWASP ZAP..."
+          zaproxy -cmd -quickurl http://127.0.0.1:5000 \
+            -quickout rapport_zap.html -quickprogress || echo "⚠️ ZAP terminé avec avertissements."
+          zaproxy -cmd -quickurl http://127.0.0.1:5000 \
+            -quickout rapport_zap.json -quickprogress || echo "⚠️ ZAP JSON terminé avec avertissements."
 
-      - name: 📦 Sauvegarde des rapports
+      - name: 📦 Sauvegarde des rapports comme artefacts
         uses: actions/upload-artifact@v4
         with:
           name: rapport-zap
