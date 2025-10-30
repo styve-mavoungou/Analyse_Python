@@ -26,17 +26,19 @@ jobs:
           sleep 20
           curl -I http://127.0.0.1:5000 || (echo "❌ Le serveur Flask ne répond pas" && cat server.log && exit 1)
 
-      - name: 🕷️ Exécution de l’analyse OWASP ZAP
+      - name: 🕷️ Exécution du scan OWASP ZAP
         run: |
-          echo "🚀 Démarrage de l’analyse OWASP ZAP..."
+          echo "🚀 Lancement de l’analyse OWASP ZAP..."
           docker run -t --network host owasp/zap2docker-stable zap-baseline.py \
             -t http://127.0.0.1:5000 \
-            -r zap_report.html || echo "⚠️ Analyse terminée avec des alertes (non bloquantes)"
+            -r rapport_zap.html \
+            || echo "⚠️ ZAP a trouvé des alertes, mais le pipeline continue."
 
       - name: 📦 Sauvegarde du rapport ZAP
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rapport-zap
           path: |
-            zap_report.html
+            rapport_zap.html
             server.log
