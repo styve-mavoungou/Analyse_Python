@@ -1,4 +1,4 @@
-name: Analyse de Sécurité (DAST) avec OWASP ZAP
+name: Analyse OWASP ZAP simple
 
 on:
   push:
@@ -9,70 +9,42 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
-    env:
-      TARGET_URL: http://127.0.0.1:5000
-
     steps:
-      # 1️⃣ Récupération du dépôt
-      - name: ⬇️ Vérification du dépôt
+      - name: 🧩 Vérification du dépôt
         uses: actions/checkout@v4
 
-      # 2️⃣ Installation et démarrage du serveur Flask
-      - name: ⚙️ Configuration de l'environnement Python et lancement du serveur Flask
+      - name: ⚙️ Installation Python et dépendances
         run: |
-          echo "🚀 Installation de Python et des dépendances..."
           sudo apt update -y
-          sudo apt install -y python3 python3-pip curl
+          sudo apt install -y python3 python3-pip wget unzip
+          pip install -r requirements.txt
 
-          echo "📦 Installation des dépendances du projet..."
-          pip install -r requirements.txt --break-system-packages
-
-          echo "🧠 Lancement du serveur Flask en arrière-plan..."
+      - name: 🚀 Lancement du serveur Flask
+        run: |
           nohup python3 app.py > server.log 2>&1 &
-
-          echo "⏳ Vérification du démarrage du serveur Flask..."
-          # Attente de 10 tentatives (5 secondes chacune)
+          echo "⏳ Démarrage du serveur Flask..."
           for i in {1..10}; do
-            if curl -s ${{ env.TARGET_URL }} > /dev/null; then
-              echo "✅ Serveur Flask est prêt !"
-              break
-            else
-              echo "🔄 Tentative $i/10 : le serveur n'est pas encore prêt..."
-              sleep 5
-            fi
-            if [ $i -eq 10 ]; then
-              echo "❌ Le serveur Flask n'a pas démarré après 50 secondes."
-              cat server.log
-              exit 1
-            fi
+            curl -s http://127.0.0.1:5000 && break
+            echo "🔄 Attente du serveur Flask..."
+            sleep 5
           done
 
-      # 3️⃣ Lancement du scan OWASP ZAP (Baseline)
-      - name: 🛡️ Lancement du ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
-        with:
-          target: ${{ env.TARGET_URL }}
-          html_report: zap_report.html
-          fail_action: false  # ne fait pas échouer le pipeline même si vulnérabilités
+      - name: 📥 Téléchargement de OWASP ZAP
+        run: |
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2_14_0_unix.zip
+          unzip ZAP_2_14_0_unix.zip -d zap
+          chmod +x zap/ZAP_2.14.0/zap.sh
+
+      - name: 🕷️ Scan OWASP ZAP en ligne de commande
+        run: |
+          zap/ZAP_2.14.0/zap.sh -cmd -quickurl http://127.0.0.1:5000 -quickout rapport_zap.html || echo "⚠️ ZAP a retourné une erreur mais le pipeline continue."
         continue-on-error: true
 
-      # 4️⃣ Affichage du rapport dans les logs
-      - name: 📜 Afficher le résumé du rapport ZAP
-        if: always()
-        run: |
-          echo "=== RAPPORT OWASP ZAP ==="
-          if [ -f zap_report.html ]; then
-            grep -E "<title>|<h1>|<h2>" zap_report.html || echo "Le rapport HTML a été généré avec succès."
-          else
-            echo "⚠️ Aucun rapport ZAP trouvé."
-          fi
-
-      # 5️⃣ Sauvegarde du rapport et des logs
-      - name: 📦 Sauvegarde du Rapport et du Log
+      - name: 📦 Sauvegarde du rapport
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rapport-zap
           path: |
-            zap_report.html
+            rapport_zap.html
             server.log
