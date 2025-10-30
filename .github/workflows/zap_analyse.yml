@@ -1,4 +1,4 @@
-name: OWASP ZAP Auto Scan
+name: Analyse automatique OWASP ZAP
 
 on:
   push:
@@ -10,30 +10,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout repository
+      - name: 🧩 Récupération du dépôt
         uses: actions/checkout@v4
 
-      - name: ⚙️ Set up Python
+      - name: ⚙️ Installation de Python et dépendances
         run: |
           sudo apt update -y
           sudo apt install -y python3 python3-pip
           pip install -r requirements.txt || true
 
-      - name: 🚀 Start Flask app in background
+      - name: 🚀 Lancement du serveur Flask
         run: |
           nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Waiting for Flask to start..."
+          echo "⏳ Démarrage du serveur Flask..."
           sleep 20
-          curl -I http://127.0.0.1:5000 || (echo "❌ Flask did not start!" && cat server.log && exit 1)
+          curl -I http://127.0.0.1:5000 || (echo "❌ Le serveur Flask ne répond pas" && cat server.log && exit 1)
 
-      - name: 🕷️ Run OWASP ZAP scan
+      - name: 🕷️ Exécution de l’analyse OWASP ZAP
         run: |
+          echo "🚀 Démarrage de l’analyse OWASP ZAP..."
           docker run -t --network host owasp/zap2docker-stable zap-baseline.py \
             -t http://127.0.0.1:5000 \
-            -r zap_report.html || true
+            -r zap_report.html || echo "⚠️ Analyse terminée avec des alertes (non bloquantes)"
 
-      - name: 📦 Upload ZAP report
+      - name: 📦 Sauvegarde du rapport ZAP
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: zap_report.html
+          name: rapport-zap
+          path: |
+            zap_report.html
+            server.log
