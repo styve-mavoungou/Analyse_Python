@@ -1,47 +1,70 @@
-name: Analyse automatique OWASP ZAP
+name: Analyse de Sécurité (DAST) avec OWASP ZAP
 
 on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+push:
+branches: [ "main" ]
+workflow_dispatch:
 
-jobs:
-  zap_scan:
-    runs-on: ubuntu-latest
+jobs: zap_scan: runs-on: ubuntu-latest
 
-    steps:
-      - name: 🧩 Vérification du dépôt
-        uses: actions/checkout@v4
+env:
+  # L'URL cible de l'application Flask, accessible localement sur le runner
+  TARGET_URL: http://127.0.0.1:5000
+  
+steps:
+  
+  # 1. Checkout du code
+  - name: ⬇️ Vérification du dépôt
+    uses: actions/checkout@v4
 
-      - name: ⚙️ Installation Python et dépendances
-        run: |
-          sudo apt update -y
-          sudo apt install -y python3 python3-pip
-          pip install -r requirements.txt
+  # 2. Installation de Python et Démarrage du Serveur Flask
+  - name: ⚙️ Configuration de l'environnement Python et Démarrage du Serveur
+    run: |
+      # Installation des outils de base et de Python
+      sudo apt update -y
+      sudo apt install -y python3 python3-pip curl
+      
+      # Installation des dépendances Python (important pour l'environnement CI)
+      # Le flag '--break-system-packages' est important dans l'environnement GitHub Actions
+      pip install -r requirements.txt --break-system-packages
+      
+      # Lancement du serveur en arrière-plan. 
+      # Utilisation de 'nohup' et spécification de l'hôte/port pour un démarrage robuste.
+      FLASK_APP=app.py nohup python3 -m flask run --host=0.0.0.0 --port=5000 > server.log 2>&1 &
 
-      - name: 🚀 Lancement du serveur Flask
-        run: |
-          nohup python3 app.py > server.log 2>&1 &
-          echo "⏳ Démarrage du serveur Flask..."
-          for i in {1..10}; do
-            curl -s http://127.0.0.1:5000 && break
-            echo "🔄 Attente du serveur Flask..."
-            sleep 5
-          done
+      echo "⏳ Démarrage du serveur Flask et vérification de la disponibilité..."
+      
+      # Boucle d'attente intelligente (vérifie 10 fois toutes les 5 secondes)
+      for i in {1..10}; do
+        # curl -s vérifie l'accessibilité silencieusement
+        curl -s ${{ env.TARGET_URL }} && echo "✅ Serveur démarré !" && break
+        echo "🔄 Tentative $i/10..."
+        sleep 5
+        # Si nous atteignons 10 tentatives sans succès, on arrête le workflow.
+        if [ $i -eq 10 ]; then
+          echo "❌ Le serveur Flask n'a pas démarré après 50 secondes."
+          cat server.log
+          exit 1
+        fi
+      done
 
-      - name: 🕷️ Lancement du scan OWASP ZAP
-        run: |
-          echo "🚀 Exécution de l’analyse OWASP ZAP..."
-          docker run -v ${{ github.workspace }}:/zap/wrk owasp/zap2docker-stable zap-baseline.py \
-            -t http://127.0.0.1:5000 \
-            -r rapport_zap.html || echo "⚠️ ZAP a retourné un code d’erreur mais le pipeline continue."
-        continue-on-error: true
-
-      - name: 📦 Sauvegarde du rapport
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rapport-zap
-          path: |
-            rapport_zap.html
-            server.log
+  # 3. Lancement du scan OWASP ZAP (Solution Fonctionnelle)
+  - name: 🛡️ Lancement du ZAP Baseline Scan
+    # Utilisation de l'Action GitHub zaproxy/action-baseline, qui gère le réseau Docker.
+    uses: zaproxy/action-baseline@v0.12.0
+    with:
+      target: ${{ env.TARGET_URL }}
+      html_report: zap_report.html
+      # Ne pas faire échouer le workflow pour le moment
+      fail_action: false
+      
+  # 4. Sauvegarde des Artefacts
+  - name: 📦 Sauvegarde du Rapport et du Log
+    # if: always() assure l'exécution même si l'étape ZAP échoue
+    if: always()
+    uses: actions/upload-artifact@v4
+    with:
+      name: rapport-zap
+      path: |
+        zap_report.html
+        server.log
