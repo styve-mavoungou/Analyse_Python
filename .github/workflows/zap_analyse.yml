@@ -45,6 +45,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rapport-zap
-          path: |
-            rapport_zap.html
-            server.log
+          path: rapport_zap.html
+            
