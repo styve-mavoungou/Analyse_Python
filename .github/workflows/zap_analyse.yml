@@ -1,4 +1,4 @@
-name: Analyse OWASP ZAP automatique
+name: Analyse OWASP ZAP automatique (Docker)
 
 on:
   push:
@@ -8,61 +8,54 @@ on:
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 🧩 Vérification du dépôt
+      - name: 🧩 Checkout
         uses: actions/checkout@v4
 
-      - name: ⚙️ Installation Python et dépendances
+      - name: ⚙️ Installer dépendances Python
         run: |
           sudo apt update -y
-          sudo apt install -y python3 python3-pip wget unzip openjdk-17-jre-headless
-          pip install -r requirements.txt
+          sudo apt install -y python3 python3-pip curl
+          pip install -r requirements.txt || true
 
-      - name: 🚀 Lancement du serveur Flask en arrière-plan
+      - name: 🚀 Lancer l'application Flask en arrière-plan
         run: |
           nohup python3 app.py > server.log 2>&1 &
           echo "⏳ Démarrage du serveur Flask..."
-          # Attente jusqu’à ce que Flask réponde
           for i in {1..20}; do
-            if curl -s http://127.0.0.1:5000 > /dev/null; then
-              echo "✅ Serveur Flask en ligne."
+            if curl -sSf http://127.0.0.1:5000 >/dev/null 2>&1; then
+              echo "✅ Serveur Flask OK"
               break
             else
               echo "🔄 En attente du serveur Flask..."
-              sleep 5
+              sleep 3
             fi
           done
+          echo "---- logs serveur (10 dernières lignes) ----"
+          tail -n 10 server.log || true
 
-      - name: 📥 Téléchargement et extraction de OWASP ZAP
+      - name: 🐳 Scanner avec OWASP ZAP (docker image)
+        # utilise le réseau host pour que le container voit http://127.0.0.1:5000 du runner
         run: |
-          wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2_14_0_unix.zip
-          unzip ZAP_2_14_0_unix.zip -d zap
-          chmod +x zap/ZAP_2.14.0/zap.sh
+          echo "🔎 Lancement du scan ZAP via docker (owasp/zap2docker-stable)"
+          docker run --rm --network host -v "${{ github.workspace }}:/zap/wrk" owasp/zap2docker-stable \
+            zap-baseline.py -t http://127.0.0.1:5000 -r /zap/wrk/rapport_zap.html -l INFO || true
+          echo "---- Contenu du workspace après scan ----"
+          ls -la "${{ github.workspace }}" | sed -n '1,200p'
 
-      - name: 🕷️ Exécution du scan OWASP ZAP (mode headless)
-        run: |
-          cd zap/ZAP_2.14.0
-          echo "🚀 Lancement de ZAP scan sur http://127.0.0.1:5000"
-          ./zap.sh -cmd \
-            -quickurl http://127.0.0.1:5000 \
-            -quickout ../../rapport_zap.html \
-            -quickprogress \
-            -addonupdate \
-            -silent || echo "⚠️ ZAP a retourné une erreur (non bloquante)."
-        continue-on-error: true
-
-      - name: 📂 Vérification du rapport généré
+      - name: 📂 Vérifier le rapport
         if: always()
         run: |
-          if [ -f rapport_zap.html ]; then
-            echo "✅ Rapport OWASP ZAP généré avec succès."
+          if [ -f "./rapport_zap.html" ]; then
+            echo "✅ rapport_zap.html trouvé"
+            ls -lh rapport_zap.html
           else
-            echo "❌ Rapport ZAP introuvable, vérifie la configuration."
-            ls -la
+            echo "❌ rapport_zap.html introuvable — affichage du dossier courant :"
+            pwd; ls -la
+            exit 1
           fi
 
-      - name: 📦 Sauvegarde du rapport OWASP ZAP
+      - name: 📦 Upload artifact (rapport OWASP ZAP)
         if: always()
         uses: actions/upload-artifact@v4
         with:
