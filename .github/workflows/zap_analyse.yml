@@ -1,4 +1,4 @@
-name: OWASP_ZAP_DAST
+name: Analyse de sécurité avec OWASP ZAP
 
 on:
   push:
@@ -25,7 +25,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: |
+
+      - name: 📦 Installation des dépendances Flask
+        run: |
           pip install -r requirements.txt || true
           nohup python3 app.py > flask_server.log 2>&1 &
           echo "⏳ Démarrage du serveur Flask..."
@@ -34,27 +36,29 @@ jobs:
               echo "✅ Flask est prêt !"
               break
             else
-              echo "🔄 En attente..."
+              echo "🔄 En attente du serveur..."
               sleep 3
             fi
           done
 
-      - name: 📦 Installation OWASP ZAP
+      - name: 📦 Installation d’OWASP ZAP et zap-cli
         run: |
           sudo apt update -y
-          sudo apt install -y wget openjdk-17-jre-headless
+          sudo apt install -y wget openjdk-17-jre-headless python3-pip
+          pip install zap-cli
           wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
           tar -xvf ZAP_2.15.0_Linux.tar.gz
+          chmod +x ZAP_2.15.0/zap.sh
           ./ZAP_2.15.0/zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true &
           echo "⏳ Lancement du daemon ZAP..."
           sleep 25
 
       - name: ⚡ Exécution du scan OWASP ZAP
         run: |
-          ./ZAP_2.15.0/zap-cli --api-key "" status -t 120 || true
-          ./ZAP_2.15.0/zap-cli --api-key "" quick-scan --self-contained --spider --scanners all $TARGET_URL || true
-          ./ZAP_2.15.0/zap-cli --api-key "" report -o zap_report.html -f html
-          ./ZAP_2.15.0/zap-cli --api-key "" report -o zap_report.json -f json
+          zap-cli --port 8090 status -t 120 || true
+          zap-cli --port 8090 quick-scan --self-contained --spider --scanners all $TARGET_URL || true
+          zap-cli --port 8090 report -o zap_report.html -f html
+          zap-cli --port 8090 report -o zap_report.json -f json
 
       - name: 📂 Upload du rapport HTML
         uses: actions/upload-artifact@v4
