@@ -1,65 +1,71 @@
-name: Analyse OWASP ZAP automatique (Docker)
+name: OWASP_ZAP_DAST
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Entrez l'URL cible à analyser"
+        required: true
+        default: "http://127.0.0.1:5000"
+
+env:
+  TARGET_URL: ${{ github.event.inputs.target_url }}
 
 jobs:
-  zap_scan:
+  zap_dast:
     runs-on: ubuntu-latest
+
     steps:
-      - name: 🧩 Checkout
+      - name: 📥 Récupération du code source
         uses: actions/checkout@v4
 
-      - name: ⚙️ Installer dépendances Python
-        run: |
-          sudo apt update -y
-          sudo apt install -y python3 python3-pip curl
+      - name: 🐍 Installation de Python et dépendances Flask
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: |
           pip install -r requirements.txt || true
-
-      - name: 🚀 Lancer l'application Flask en arrière-plan
-        run: |
-          nohup python3 app.py > server.log 2>&1 &
+          nohup python3 app.py > flask_server.log 2>&1 &
           echo "⏳ Démarrage du serveur Flask..."
-          for i in {1..20}; do
+          for i in {1..15}; do
             if curl -sSf http://127.0.0.1:5000 >/dev/null 2>&1; then
-              echo "✅ Serveur Flask OK"
+              echo "✅ Flask est prêt !"
               break
             else
-              echo "🔄 En attente du serveur Flask..."
+              echo "🔄 En attente..."
               sleep 3
             fi
           done
-          echo "---- logs serveur (10 dernières lignes) ----"
-          tail -n 10 server.log || true
 
-      - name: 🐳 Scanner avec OWASP ZAP (docker image)
+      - name: 📦 Installation OWASP ZAP
         run: |
-          echo "🔎 Lancement du scan ZAP via Docker"
-          mkdir -p output
-          docker run --rm \
-            -v "${{ github.workspace }}/output:/zap/wrk" \
-            owasp/zap2docker-stable \
-            zap-baseline.py -t http://host.docker.internal:5000 -r /zap/wrk/rapport_zap.html -l INFO || true
-          echo "---- Contenu du dossier output ----"
-          ls -la output
+          sudo apt update -y
+          sudo apt install -y wget openjdk-17-jre-headless
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
+          tar -xvf ZAP_2.15.0_Linux.tar.gz
+          ./ZAP_2.15.0/zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true &
+          echo "⏳ Lancement du daemon ZAP..."
+          sleep 25
 
-      - name: 📂 Vérifier le rapport
-        if: always()
+      - name: ⚡ Exécution du scan OWASP ZAP
         run: |
-          if [ -f "./output/rapport_zap.html" ]; then
-            echo "✅ rapport_zap.html trouvé"
-            ls -lh ./output/rapport_zap.html
-          else
-            echo "❌ rapport_zap.html introuvable — contenu du dossier output :"
-            ls -la output
-            exit 1
-          fi
+          ./ZAP_2.15.0/zap-cli --api-key "" status -t 120 || true
+          ./ZAP_2.15.0/zap-cli --api-key "" quick-scan --self-contained --spider --scanners all $TARGET_URL || true
+          ./ZAP_2.15.0/zap-cli --api-key "" report -o zap_report.html -f html
+          ./ZAP_2.15.0/zap-cli --api-key "" report -o zap_report.json -f json
 
-      - name: 📦 Upload artifact (rapport OWASP ZAP)
-        if: always()
+      - name: 📂 Upload du rapport HTML
         uses: actions/upload-artifact@v4
         with:
-          name: rapport-owasp-zap
-          path: output/rapport_zap.html
+          name: Rapport_OWASP_ZAP_HTML
+          path: zap_report.html
+          retention-days: 30
+
+      - name: 📂 Upload du rapport JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rapport_OWASP_ZAP_JSON
+          path: zap_report.json
+          retention-days: 30
