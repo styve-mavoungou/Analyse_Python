@@ -35,23 +35,25 @@ jobs:
           tail -n 10 server.log || true
 
       - name: 🐳 Scanner avec OWASP ZAP (docker image)
-        # utilise le réseau host pour que le container voit http://127.0.0.1:5000 du runner
         run: |
-          echo "🔎 Lancement du scan ZAP via docker (owasp/zap2docker-stable)"
-          docker run --rm --network host -v "${{ github.workspace }}:/zap/wrk" owasp/zap2docker-stable \
-            zap-baseline.py -t http://127.0.0.1:5000 -r /zap/wrk/rapport_zap.html -l INFO || true
-          echo "---- Contenu du workspace après scan ----"
-          ls -la "${{ github.workspace }}" | sed -n '1,200p'
+          echo "🔎 Lancement du scan ZAP via Docker"
+          mkdir -p output
+          docker run --rm \
+            -v "${{ github.workspace }}/output:/zap/wrk" \
+            owasp/zap2docker-stable \
+            zap-baseline.py -t http://host.docker.internal:5000 -r /zap/wrk/rapport_zap.html -l INFO || true
+          echo "---- Contenu du dossier output ----"
+          ls -la output
 
       - name: 📂 Vérifier le rapport
         if: always()
         run: |
-          if [ -f "./rapport_zap.html" ]; then
+          if [ -f "./output/rapport_zap.html" ]; then
             echo "✅ rapport_zap.html trouvé"
-            ls -lh rapport_zap.html
+            ls -lh ./output/rapport_zap.html
           else
-            echo "❌ rapport_zap.html introuvable — affichage du dossier courant :"
-            pwd; ls -la
+            echo "❌ rapport_zap.html introuvable — contenu du dossier output :"
+            ls -la output
             exit 1
           fi
 
@@ -60,4 +62,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rapport-owasp-zap
-          path: rapport_zap.html
+          path: output/rapport_zap.html
