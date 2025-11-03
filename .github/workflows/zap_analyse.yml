@@ -1,4 +1,4 @@
-name: Analyse de sécurité avec OWASP ZAP
+name: 🔍 Analyse DAST avec OWASP ZAP
 
 on:
   push:
@@ -6,70 +6,86 @@ on:
   workflow_dispatch:
     inputs:
       target_url:
-        description: "Entrez l'URL cible à analyser"
+        description: "URL de la cible Flask à analyser"
         required: true
-        default: "http://127.0.0.1:5000"
-
-env:
-  TARGET_URL: ${{ github.event.inputs.target_url }}
+        default: "http://192.168.1.17:5000"
 
 jobs:
-  zap_dast:
+  zap_scan:
     runs-on: ubuntu-latest
+    env:
+      TARGET_URL: ${{ github.event.inputs.target_url }}
 
     steps:
-      - name: 📥 Récupération du code source
+      - name: 📥 Récupération du dépôt
         uses: actions/checkout@v4
 
-      - name: 🐍 Installation de Python et dépendances Flask
+      - name: ⚙️ Installation de OWASP ZAP 2.16.1
+        run: |
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.16.1/ZAP_2.16.1_Linux.tar.gz
+          tar -xvf ZAP_2.16.1_Linux.tar.gz -C /opt/
+          chmod +x /opt/ZAP_2.16.1/zap.sh
+          echo "✅ ZAP installé dans /opt/ZAP_2.16.1"
+
+      - name: 🚀 Démarrage de ZAP en mode Daemon
+        run: |
+          /opt/ZAP_2.16.1/zap.sh -daemon -host 0.0.0.0 -port 8090 \
+            -config api.addrs.addr.name=.* \
+            -config api.addrs.addr.regex=true \
+            -config api.disablekey=true &
+          echo "⏳ Attente du démarrage de ZAP..."
+          sleep 30
+
+      - name: 🐍 Installation de Python et dépendances
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.11'
 
-      - name: 📦 Installation des dépendances Flask
+      - name: 📦 Installation des bibliothèques Python
         run: |
-          pip install -r requirements.txt || true
-          nohup python3 app.py > flask_server.log 2>&1 &
-          echo "⏳ Démarrage du serveur Flask..."
-          for i in {1..15}; do
-            if curl -sSf http://127.0.0.1:5000 >/dev/null 2>&1; then
-              echo "✅ Flask est prêt !"
-              break
-            else
-              echo "🔄 En attente du serveur..."
-              sleep 3
-            fi
-          done
-
-      - name: 📦 Installation d’OWASP ZAP et zap-cli
-        run: |
-          sudo apt update -y
-          sudo apt install -y wget openjdk-17-jre-headless python3-pip
-          pip install zap-cli
-          wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
-          tar -xvf ZAP_2.15.0_Linux.tar.gz
-          chmod +x ZAP_2.15.0/zap.sh
-          ./ZAP_2.15.0/zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true &
-          echo "⏳ Lancement du daemon ZAP..."
-          sleep 25
+          pip install python-owasp-zap-v2.4 requests
 
       - name: ⚡ Exécution du scan OWASP ZAP
         run: |
-          zap-cli --port 8090 status -t 120 || true
-          zap-cli --port 8090 quick-scan --self-contained --spider --scanners all $TARGET_URL || true
-          zap-cli --port 8090 report -o zap_report.html -f html
-          zap-cli --port 8090 report -o zap_report.json -f json
+          echo "🔍 Démarrage de l'analyse sur $TARGET_URL"
+          python3 << 'EOF'
+          from zapv2 import ZAPv2
+          import time
 
-      - name: 📂 Upload du rapport HTML
+          target = '${{ github.event.inputs.target_url }}'
+          zap = ZAPv2(proxies={'http': 'http://localhost:8090', 'https': 'http://localhost:8090'})
+
+          print("📡 Scan en cours sur :", target)
+          zap.urlopen(target)
+          time.sleep(5)
+
+          print("⚙️ Lancement du scan actif...")
+          scan_id = zap.ascan.scan(target)
+          while int(zap.ascan.status(scan_id)) < 100:
+              print("⏳ Progression:", zap.ascan.status(scan_id), "%")
+              time.sleep(10)
+
+          print("✅ Scan terminé. Génération des rapports...")
+
+          with open('zap_report.html', 'w', encoding='utf-8') as f:
+              f.write(zap.core.htmlreport())
+
+          with open('zap_report.json', 'w', encoding='utf-8') as f:
+              f.write(zap.core.jsonreport())
+
+          print("📄 Rapports générés : zap_report.html / zap_report.json")
+          EOF
+
+      - name: 📤 Upload du rapport HTML
         uses: actions/upload-artifact@v4
         with:
-          name: Rapport_OWASP_ZAP_HTML
+          name: ZAP_Report_HTML
           path: zap_report.html
           retention-days: 30
 
-      - name: 📂 Upload du rapport JSON
+      - name: 📤 Upload du rapport JSON
         uses: actions/upload-artifact@v4
         with:
-          name: Rapport_OWASP_ZAP_JSON
+          name: ZAP_Report_JSON
           path: zap_report.json
           retention-days: 30
