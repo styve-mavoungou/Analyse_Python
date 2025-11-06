@@ -1,4 +1,4 @@
-name: Analyse statique du code surce avec SonarQube
+name: Analyse statique avec SonarQube
 
 on:
   push:
