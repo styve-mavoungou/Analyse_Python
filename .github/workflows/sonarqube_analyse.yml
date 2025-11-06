@@ -1,55 +1,49 @@
-name: SonarQube Analysis
+name: Analyse statique du code surce avec SonarQube
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   sonarqube:
     name: Analyse SonarQube
     runs-on: self-hosted
-    
+
+    env:
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: 🔍 Informations
         run: |
           echo "=========================================="
-          echo "🚀 Analyse SonarQube"
+          echo "🚀 Lancement de l'analyse SonarQube"
           echo "=========================================="
           echo "📁 Répertoire: $(pwd)"
           echo "🌿 Branche: ${{ github.ref_name }}"
           echo "👤 Auteur: ${{ github.actor }}"
           ls -la
-      
-      - name: 🔌 Test SonarQube
+
+      - name: 🧠 Vérification de SonarQube
         run: |
-          curl -s ${{ secrets.SONAR_HOST_URL }}/api/system/status || echo "SonarQube non accessible"
-      
-      - name: 📊 Analyse SonarQube
+          curl -s $SONAR_HOST_URL/api/system/status || echo "⚠️ SonarQube non accessible"
+
+      - name: 📊 Exécution de l'analyse SonarQube
         run: |
           export PATH=$PATH:/opt/sonar-scanner/bin
           sonar-scanner \
-            -Dsonar.projectKey=projet_python \
-            -Dsonar.projectName="Projet Python" \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
-            -Dsonar.exclusions=venv/**,__pycache__/**,*.pyc,instance/**,dump.sql,.github/**,.scannerwork/** \
-            -Dsonar.python.version=3.8
-      
+            -Dproject.settings=sonar-project.properties
+
       - name: ✅ Terminé
         if: always()
         run: |
-          echo "✅ Analyse terminée !"
-          echo "📊 Résultats: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=projet_python"
+          echo "✅ Analyse terminée avec succès !"
+          echo "📊 Résultats disponibles sur : $SONAR_HOST_URL/dashboard?id=projet_python"
