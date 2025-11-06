@@ -1,4 +1,4 @@
-name: Analyse statique de sécurité avec SonarQube
+name: Analyse statique du code source avec SonarQube
 
 on:
   push:
@@ -11,17 +11,17 @@ jobs:
   sonarqube:
     name: Analyse SonarQube
     runs-on: self-hosted
-
+    
     env:
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
+    
     steps:
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      
       - name: 🔍 Informations
         run: |
           echo "=========================================="
@@ -31,17 +31,16 @@ jobs:
           echo "🌿 Branche: ${{ github.ref_name }}"
           echo "👤 Auteur: ${{ github.actor }}"
           ls -la
-
+      
       - name: 🧠 Vérification de SonarQube
         run: |
           curl -s $SONAR_HOST_URL/api/system/status || echo "⚠️ SonarQube non accessible"
-
+      
       - name: 📊 Exécution de l'analyse SonarQube
         run: |
           export PATH=$PATH:/opt/sonar-scanner/bin
-          sonar-scanner \
-            -Dproject.settings=sonar-project.properties
-
+          sonar-scanner -Dproject.settings=sonar-project.properties
+      
       - name: ✅ Terminé
         if: always()
         run: |
