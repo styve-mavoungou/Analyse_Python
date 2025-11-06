@@ -1,4 +1,4 @@
-name: Analyse statique avec SonarQube
+name: Analyse statique de sécurité avec SonarQube
 
 on:
   push:
