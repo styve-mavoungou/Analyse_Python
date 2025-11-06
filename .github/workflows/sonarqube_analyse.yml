@@ -1,4 +1,4 @@
-name: Analyse de code avec SonarQube
+name: SonarQube Analysis
 
 on:
   push:
@@ -6,55 +6,50 @@ on:
       - main
       - master
   pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
 jobs:
-  sonarqube_scan:
-    name: Analyse statique SonarQube
-    runs-on: ubuntu-latest
-
+  sonarqube:
+    name: Analyse SonarQube
+    runs-on: self-hosted
+    
     steps:
-      # Étape 1 : Récupération du code
-      - name: 📦 Checkout du code
+      - name: 📥 Checkout du code
         uses: actions/checkout@v4
-
-      # Étape 2 : Installation de Python
-      - name: 🐍 Installation de Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-
-      # Étape 3 : Installation des dépendances
-      - name: 📚 Installation des dépendances
+          fetch-depth: 0
+      
+      - name: 🔍 Informations
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install pylint pytest pytest-cov || true
-
-      # Étape 4 : Génération des rapports locaux
-      - name: 🧪 Génération des rapports
+          echo "=========================================="
+          echo "🚀 Analyse SonarQube"
+          echo "=========================================="
+          echo "📁 Répertoire: $(pwd)"
+          echo "🌿 Branche: ${{ github.ref_name }}"
+          echo "👤 Auteur: ${{ github.actor }}"
+          ls -la
+      
+      - name: 🔌 Test SonarQube
         run: |
-          pylint app.py models.py forms.py config.py reset_db.py > pylint-report.txt || true
-          pytest --cov=./ --cov-report=xml || true
-
-      # Étape 5 : Téléchargement et exécution du scanner SonarQube
-      - name: 🔍 Exécution de SonarQube Scanner
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          curl -s ${{ secrets.SONAR_HOST_URL }}/api/system/status || echo "SonarQube non accessible"
+      
+      - name: 📊 Analyse SonarQube
         run: |
-          export SONAR_SCANNER_VERSION=5.0.1.3006
-          export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux
-          mkdir -p $HOME/.sonar
-          curl -sSLo $HOME/.sonar/sonar-scanner.zip \
-            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux.zip
-          unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
-          export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+          export PATH=$PATH:/opt/sonar-scanner/bin
           sonar-scanner \
             -Dsonar.projectKey=projet_python \
+            -Dsonar.projectName="Projet Python" \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://192.168.1.17:9000 \
-            -Dsonar.token=$SONAR_TOKEN \
-            -Dsonar.python.version=3.10 \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=venv/**,__pycache__/**,*.pyc,*.txt,*.sql,static/**,templates/** \
-            -Dsonar.python.coverage.reportPaths=coverage.xml \
-            -Dsonar.python.pylint.reportPaths=pylint-report.txt
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.exclusions=venv/**,__pycache__/**,*.pyc,instance/**,dump.sql,.github/**,.scannerwork/** \
+            -Dsonar.python.version=3.8
+      
+      - name: ✅ Terminé
+        if: always()
+        run: |
+          echo "✅ Analyse terminée !"
+          echo "📊 Résultats: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=projet_python"
