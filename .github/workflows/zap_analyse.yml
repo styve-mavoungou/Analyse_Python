@@ -12,16 +12,9 @@ jobs:
     name: Scan ZAP Baseline
 
     steps:
-      # 1. Récupération du code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Préparation du dossier pour le rapport (Fix permission Docker)
-      - name: Prepare Report Directory
-        run: |
-          chmod 777 $(pwd)
-
-      # 3. Installation des dépendances Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -31,28 +24,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install flask
 
-      # 4. Démarrage de Flask en arrière-plan
       - name: Start Flask Application
         run: |
-          # On lance Flask et on redirige les logs pour ne pas bloquer
           python app.py > /dev/null 2>&1 &
-          # On attend que le serveur soit prêt
           sleep 10
 
-      # 5. Lancement de ZAP via Docker (Mode Network Host)
-      # C'est la méthode la plus fiable pour accéder au localhost
       - name: Run ZAP Baseline Scan
         run: |
-          docker run --network host \
-            -v $(pwd):/zap/wrk/:rw \
-            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-            -t http://127.0.0.1:5000 \
+          docker run --rm -t \
+            -v $(pwd):/zap/wrk:rw \
+            -p 5000:5000 \
+            --add-host=host.docker.internal:host-gateway \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://host.docker.internal:5000 \
             -r rapport_zap.html \
-            -I  # -I permet de ne pas faire échouer le build sur des WARNINGS
+            -I
 
-      # 6. Sauvegarde du rapport
       - name: Upload ZAP Report
         if: always()
         uses: actions/upload-artifact@v4
