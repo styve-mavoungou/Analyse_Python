@@ -16,49 +16,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Installation de Python
+      # 2. Préparation du dossier pour le rapport (Fix permission Docker)
+      - name: Prepare Report Directory
+        run: |
+          chmod 777 $(pwd)
+
+      # 3. Installation des dépendances Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # 3. Installation des dépendances
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # On installe flask explicitement si jamais il manque
           pip install flask
 
-      # 4. Démarrage de l'application Flask
-      # On utilise --host=0.0.0.0 pour que l'app soit visible depuis le conteneur Docker de ZAP
+      # 4. Démarrage de Flask en arrière-plan
       - name: Start Flask Application
         run: |
-          export FLASK_APP=app.py
-          flask run --host=0.0.0.0 --port=5000 &
-          sleep 15
+          # On lance Flask et on redirige les logs pour ne pas bloquer
+          python app.py > /dev/null 2>&1 &
+          # On attend que le serveur soit prêt
+          sleep 10
 
-      # 5. Lancement du scan OWASP ZAP
-      - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.14.0
-        with:
-          target: 'http://127.0.0.1:5000'
-          allow_issue_writing: false
-          fail_action: false  # On met false pour le moment pour voir le rapport même s'il y a des failles
-          cmd_options: '-a'   # -a inclut les règles passives
-
-      # 6. Renommer le rapport (Astuce pour éviter l'erreur de nom)
-      # Par défaut ZAP sort 'report_html.html', on le renomme pour être clair
-      - name: Rename Report
-        if: always()
+      # 5. Lancement de ZAP via Docker (Mode Network Host)
+      # C'est la méthode la plus fiable pour accéder au localhost
+      - name: Run ZAP Baseline Scan
         run: |
-          if [ -f report_html.html ]; then
-            mv report_html.html rapport_zap.html
-          else
-            echo "Le rapport n'a pas été généré."
-          fi
+          docker run --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://127.0.0.1:5000 \
+            -r rapport_zap.html \
+            -I  # -I permet de ne pas faire échouer le build sur des WARNINGS
 
-      # 7. Sauvegarde du rapport corrigé
+      # 6. Sauvegarde du rapport
       - name: Upload ZAP Report
         if: always()
         uses: actions/upload-artifact@v4
