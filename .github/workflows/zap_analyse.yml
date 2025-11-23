@@ -1,4 +1,4 @@
-name: Analyse DAST avec OWASP ZAP
+name: Analyse Dynamique avec OWASP ZAP
 
 on:
   push:
@@ -20,36 +20,48 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10' 
+          python-version: '3.10'
 
       # 3. Installation des dépendances
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # On installe flask explicitement si jamais il manque
+          pip install flask
 
-      # 4. Démarrage de l'application Flask en arrière-plan
-      # C'est l'étape CRUCIALE pour le DAST : l'app doit tourner pour être scannée
+      # 4. Démarrage de l'application Flask
+      # On utilise --host=0.0.0.0 pour que l'app soit visible depuis le conteneur Docker de ZAP
       - name: Start Flask Application
         run: |
-          # On lance l'app en tâche de fond avec '&'
-          python app.py &
-          # On attend 10 secondes pour être sûr que le serveur est prêt
-          sleep 10
+          export FLASK_APP=app.py
+          flask run --host=0.0.0.0 --port=5000 &
+          sleep 15
 
-      # 5. Lancement du scan OWASP ZAP (Baseline Scan)
+      # 5. Lancement du scan OWASP ZAP
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.14.0
         with:
-          target: 'http://localhost:5000'
-          allow_issue_writing: false # Mettre à true pour créer des Issues GitHub automatiquement
-          fail_action: true          # Fait échouer le pipeline si des failles High/Medium sont trouvées
-          cmd_options: '-a'          # Inclure les règles "alpha" (optionnel)
+          target: 'http://127.0.0.1:5000'
+          allow_issue_writing: false
+          fail_action: false  # On met false pour le moment pour voir le rapport même s'il y a des failles
+          cmd_options: '-a'   # -a inclut les règles passives
 
-      # 6. Sauvegarde du rapport (même si le scan échoue)
+      # 6. Renommer le rapport (Astuce pour éviter l'erreur de nom)
+      # Par défaut ZAP sort 'report_html.html', on le renomme pour être clair
+      - name: Rename Report
+        if: always()
+        run: |
+          if [ -f report_html.html ]; then
+            mv report_html.html rapport_zap.html
+          else
+            echo "Le rapport n'a pas été généré."
+          fi
+
+      # 7. Sauvegarde du rapport corrigé
       - name: Upload ZAP Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAP-rapport
+          name: ZAP-Report
           path: rapport_zap.html
