@@ -9,45 +9,59 @@ on:
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
+    name: Scan ZAP
 
     steps:
-      # 1️⃣ Récupération du code source
-      - name: Checkout repo
+      # 1. Récupération du code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Configuration Python
+      # 2. Permissions (CRUCIAL : Permet à ZAP de créer le rapport)
+      - name: Fix Permissions
+        run: chmod -R 777 .
+
+      # 3. Installation Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
-      # 3️⃣ Installation dépendances
+      # 4. Installation dépendances (Avec sécurité anti-bug)
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
+          # Correction préventive pour le bug pkg-resources s'il est présent
+          sed -i '/pkg-resources/d' requirements.txt || true
           pip install -r requirements.txt
+          pip install flask
 
-      # 4️⃣ Lancer l'application Flask
+      # 5. Démarrage de Flask
       - name: Start Flask Application
         run: |
-          python app.py > /dev/null 2>&1 &
-          sleep 15
+          # On lance l'app en arrière-plan sur le port 5000
+          nohup python app.py > app.log 2>&1 &
+          echo "Démarrage du serveur..."
+          sleep 10
 
-      # 5️⃣ Vérifier que l'application répond
-      - name: Verify App Availability
+      # 6. Vérification que l'app répond
+      - name: Check App Status
         run: curl -I http://127.0.0.1:5000
 
-      # 6️⃣ Scan OWASP ZAP
-      - name: Run OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.10.0
-        with:
-          target: "http://127.0.0.1:5000"
-          cmd_options: "-r rapport_zap.html -I"
-          docker_options: "--network=host"
-          fail_action: false  # ✅ ne bloque pas le pipeline
+      # 7. Lancement de ZAP (Correction du problème réseau)
+      # On n'utilise PAS 'uses' car il rejette 'docker_options'.
+      # On lance docker manuellement pour avoir le contrôle total.
+      - name: Run ZAP Baseline Scan
+        run: |
+          docker run --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://127.0.0.1:5000 \
+            -r rapport_zap.html \
+            -I
 
-      # 7️⃣ Export du rapport ZAP
+      # 8. Sauvegarde du rapport
       - name: Upload ZAP Report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ZAP-rapport
