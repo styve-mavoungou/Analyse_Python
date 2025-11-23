@@ -1,91 +1,55 @@
-name: 🔍 Analyse DAST avec OWASP ZAP
+name: Analyse DAST avec OWASP ZAP
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
-    inputs:
-      target_url:
-        description: "URL de la cible Flask à analyser"
-        required: true
-        default: "http://192.168.1.17:5000"
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-    env:
-      TARGET_URL: ${{ github.event.inputs.target_url }}
+    name: Scan ZAP Baseline
 
     steps:
-      - name: 📥 Récupération du dépôt
+      # 1. Récupération du code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ⚙️ Installation de OWASP ZAP 2.16.1
-        run: |
-          wget https://github.com/zaproxy/zaproxy/releases/download/v2.16.1/ZAP_2.16.1_Linux.tar.gz
-          tar -xvf ZAP_2.16.1_Linux.tar.gz -C /opt/
-          chmod +x /opt/ZAP_2.16.1/zap.sh
-          echo "✅ ZAP installé dans /opt/ZAP_2.16.1"
-
-      - name: 🚀 Démarrage de ZAP en mode Daemon
-        run: |
-          /opt/ZAP_2.16.1/zap.sh -daemon -host 0.0.0.0 -port 8090 \
-            -config api.addrs.addr.name=.* \
-            -config api.addrs.addr.regex=true \
-            -config api.disablekey=true &
-          echo "⏳ Attente du démarrage de ZAP..."
-          sleep 30
-
-      - name: 🐍 Installation de Python et dépendances
+      # 2. Installation de Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10' 
 
-      - name: 📦 Installation des bibliothèques Python
+      # 3. Installation des dépendances
+      - name: Install dependencies
         run: |
-          pip install python-owasp-zap-v2.4 requests
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: ⚡ Exécution du scan OWASP ZAP
+      # 4. Démarrage de l'application Flask en arrière-plan
+      # C'est l'étape CRUCIALE pour le DAST : l'app doit tourner pour être scannée
+      - name: Start Flask Application
         run: |
-          echo "🔍 Démarrage de l'analyse sur $TARGET_URL"
-          python3 << 'EOF'
-          from zapv2 import ZAPv2
-          import time
+          # On lance l'app en tâche de fond avec '&'
+          python app.py &
+          # On attend 10 secondes pour être sûr que le serveur est prêt
+          sleep 10
 
-          target = '${{ github.event.inputs.target_url }}'
-          zap = ZAPv2(proxies={'http': 'http://localhost:8090', 'https': 'http://localhost:8090'})
+      # 5. Lancement du scan OWASP ZAP (Baseline Scan)
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'http://localhost:5000'
+          allow_issue_writing: false # Mettre à true pour créer des Issues GitHub automatiquement
+          fail_action: true          # Fait échouer le pipeline si des failles High/Medium sont trouvées
+          cmd_options: '-a'          # Inclure les règles "alpha" (optionnel)
 
-          print("📡 Scan en cours sur :", target)
-          zap.urlopen(target)
-          time.sleep(5)
-
-          print("⚙️ Lancement du scan actif...")
-          scan_id = zap.ascan.scan(target)
-          while int(zap.ascan.status(scan_id)) < 100:
-              print("⏳ Progression:", zap.ascan.status(scan_id), "%")
-              time.sleep(10)
-
-          print("✅ Scan terminé. Génération des rapports...")
-
-          with open('zap_report.html', 'w', encoding='utf-8') as f:
-              f.write(zap.core.htmlreport())
-
-          with open('zap_report.json', 'w', encoding='utf-8') as f:
-              f.write(zap.core.jsonreport())
-
-          print("📄 Rapports générés : zap_report.html / zap_report.json")
-          EOF
-
-      - name: 📤 Upload du rapport HTML
+      # 6. Sauvegarde du rapport (même si le scan échoue)
+      - name: Upload ZAP Report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAP_Report_HTML
-          path: zap_report.html
-          retention-days: 30
-
-      - name: 📤 Upload du rapport JSON
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZAP_Report_JSON
-          path: zap_report.json
-          retention-days: 30
+          name: ZAP-rapport
+          path: rapport_zap.html
