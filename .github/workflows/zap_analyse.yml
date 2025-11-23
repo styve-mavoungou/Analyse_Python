@@ -11,33 +11,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Récupération du code source
+      # 1️⃣    Récupération du code source
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2️⃣ Configuration Python
+      # 2️⃣    Configuration Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      # 3️⃣ Installation dépendances
+      # 3️⃣    Installation dépendances
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Lancer l'application Flask
+      # 4️⃣    Lancer l'application Flask
       - name: Start Flask Application
         run: |
           python app.py > /dev/null 2>&1 &
           sleep 15
 
-      # 5️⃣ Vérifier que l'application répond
+      # 5️⃣    Vérifier que l'application répond
       - name: Verify App Availability
         run: curl -I http://127.0.0.1:5000
 
-      # 6️⃣ Scan OWASP ZAP
+      # 6️⃣    Scan OWASP ZAP
       - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.10.0
         with:
@@ -45,9 +45,9 @@ jobs:
           cmd_options: "-r rapport_zap.html -I"
           fail_action: false  # ✅ n'échoue pas même si vulnérabilités
 
-      # 7️⃣ Export du rapport ZAP
+      # 7️⃣    Export du rapport ZAP
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
-          name: ZAP-Report
+          name: ZAP-rapport
           path: rapport_zap.html
